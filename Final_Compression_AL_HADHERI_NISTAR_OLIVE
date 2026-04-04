@@ -1,0 +1,238 @@
+%% Compressor_Exergy_Corrected.m
+% Corrected Energy & Exergy Analysis — Experimental vs Theoretical
+%
+% eta_energy (1st law) = W_ise / W_act          (isentropic efficiency)
+% eta_exergy (2nd law) = Delta_psi / W_act       (flow exergy / actual work)
+%
+% Author: Al Hadheri, Nistar, Olive
+% Date:   April 2026
+
+clear; clc; close all;
+
+%% ── 1. Constants ────────────────────────────────────────────────────────────
+R_kJ  = 0.287;   cp_kJ = 1.004;
+gamma = 1.4;
+Cd    = 0.61;    S1 = 0.000581;   S2 = 0.000123;
+T0    = 298.15;  % K  dead-state (ambient) temperature
+
+R  = R_kJ * 1000;    % J/(kg·K)
+cp = cp_kJ * 1000;   % J/(kg·K)
+beta = sqrt(S2 / S1);
+
+%% ── 2. Experimental Data ────────────────────────────────────────────────────
+
+% CASE 1 — fixed RPM = 750, varying P2 (1→6 bar)
+data1.delta_P1 = [34,  32,  47,  47,  47,  46 ];
+data1.P2_bar   = [1,   2,   3,   4,   5,   6  ];
+data1.P4_mbar  = [992, 992, 993, 993, 993, 993];
+data1.T1_C     = [27.2,27.1,27.4,27.5,27.6,28.0];
+data1.T2_C     = [51.8,53.0,54.0,54.7,56.3,58.1];
+data1.T3_C     = [22.3,22.3,22.4,22.4,22.5,22.7];
+data1.W_act    = [105, 146, 172, 196, 219, 245 ];
+
+% CASE 2 — fixed P2 = 3 bar, varying RPM (500→1100)
+data2.delta_P1 = [44,  43,  44,  28 ];
+data2.P2_bar   = [3,   3,   3,   3  ];
+data2.P4_mbar  = [993, 993, 994, 994];
+data2.T1_C     = [28.3,28.9,28.9,28.8];
+data2.T2_C     = [60.0,61.8,66.2,75.4];
+data2.T3_C     = [22.9,22.9,23.0,23.4];
+data2.W_act    = [118, 154, 196, 242 ];
+data2.RPM      = [500, 700, 900, 1100];
+
+%% ── 3. Experimental Analysis ────────────────────────────────────────────────
+r1 = analyseCase(data1, R, cp, gamma, Cd, S1, S2, beta, T0);
+r2 = analyseCase(data2, R, cp, gamma, Cd, S1, S2, beta, T0);
+
+%% ── 4. Theoretical Model ─────────────────────────────────────────────────────
+% Use a quadratic fit of the experimental η_ise to generate theoretical
+% values at the same operating points. No fit curve is plotted.
+
+p1_fit      = polyfit(r1.PR,     r1.eta_ise/100, 2);
+eta_ise_th1 = polyval(p1_fit,    r1.PR);
+th1         = theoreticalEfficiencies(r1, eta_ise_th1, cp, R, gamma, T0);
+
+p2_fit      = polyfit(data2.RPM, r2.eta_ise/100, 2);
+eta_ise_th2 = polyval(p2_fit,    data2.RPM);
+th2         = theoreticalEfficiencies(r2, eta_ise_th2, cp, R, gamma, T0);
+
+%% ── 5. Print Summary Tables ─────────────────────────────────────────────────
+printTable('CASE 1 — Fixed RPM=750, Varying P2', ...
+    data1.P2_bar, 'P2 (bar)', r1, th1);
+printTable('CASE 2 — Fixed P2=3 bar, Varying RPM', ...
+    data2.RPM, 'RPM', r2, th2);
+
+%% ── 6. PLOTS ─────────────────────────────────────────────────────────────────
+
+%% ── Figure 1: Case 1 — Efficiencies vs P2 ───────────────────────────────────
+figure('Color','w','Position',[100 100 1000 420]);
+sgtitle('Case 1 — Fixed RPM = 750 rpm : Efficiency vs Discharge Pressure', ...
+    'FontSize',13,'FontWeight','bold');
+
+subplot(1,2,1); hold on;
+plot(data1.P2_bar, r1.eta_energy,  'bo-', 'LineWidth',2,'MarkerFaceColor','b','MarkerSize',7);
+plot(data1.P2_bar, th1.eta_energy, 'b^--','LineWidth',1.8,'MarkerFaceColor','w','MarkerSize',7);
+xlabel('Discharge Pressure P_2 (bar)','FontSize',11);
+ylabel('\eta_{energy} = \eta_{isentropic} (%)','FontSize',11);
+title('Energy Efficiency (1st Law)','FontSize',11);
+legend('Experimental','Theoretical','Location','best');
+grid on; box on;
+
+subplot(1,2,2); hold on;
+plot(data1.P2_bar, r1.eta_exergy,  'rs-', 'LineWidth',2,'MarkerFaceColor','r','MarkerSize',7);
+plot(data1.P2_bar, th1.eta_exergy, 'r^--','LineWidth',1.8,'MarkerFaceColor','w','MarkerSize',7);
+xlabel('Discharge Pressure P_2 (bar)','FontSize',11);
+ylabel('\eta_{exergy} = \Delta\psi / W_{act} (%)','FontSize',11);
+title('Exergy Efficiency (2nd Law)','FontSize',11);
+legend('Experimental','Theoretical','Location','best');
+grid on; box on;
+
+%% ── Figure 2: Case 2 — Efficiencies vs RPM ──────────────────────────────────
+figure('Color','w','Position',[100 560 1000 420]);
+sgtitle('Case 2 — Fixed P_2 = 3 bar : Efficiency vs Shaft Speed', ...
+    'FontSize',13,'FontWeight','bold');
+
+subplot(1,2,1); hold on;
+plot(data2.RPM, r2.eta_energy,  'bo-', 'LineWidth',2,'MarkerFaceColor','b','MarkerSize',7);
+plot(data2.RPM, th2.eta_energy, 'b^--','LineWidth',1.8,'MarkerFaceColor','w','MarkerSize',7);
+xlabel('Motor Speed N (rpm)','FontSize',11);
+ylabel('\eta_{energy} = \eta_{isentropic} (%)','FontSize',11);
+title('Energy Efficiency (1st Law)','FontSize',11);
+legend('Experimental','Theoretical','Location','best');
+grid on; box on;
+
+subplot(1,2,2); hold on;
+plot(data2.RPM, r2.eta_exergy,  'rs-', 'LineWidth',2,'MarkerFaceColor','r','MarkerSize',7);
+plot(data2.RPM, th2.eta_exergy, 'r^--','LineWidth',1.8,'MarkerFaceColor','w','MarkerSize',7);
+xlabel('Motor Speed N (rpm)','FontSize',11);
+ylabel('\eta_{exergy} = \Delta\psi / W_{act} (%)','FontSize',11);
+title('Exergy Efficiency (2nd Law)','FontSize',11);
+legend('Experimental','Theoretical','Location','best');
+grid on; box on;
+
+%% ── Figure 3: Case 1 — X_dest breakdown vs P2 ───────────────────────────────
+figure('Color','w','Position',[1120 100 900 400]);
+sgtitle('Case 1 — Exergy Destruction & Power Breakdown vs P_2', ...
+    'FontSize',13,'FontWeight','bold');
+
+subplot(1,2,1);
+bar(data1.P2_bar, [r1.delta_psi; r1.X_dest]','stacked');
+colororder({'#4472C4','#ED7D31'});
+xlabel('P_2 (bar)','FontSize',11); ylabel('Power (W)','FontSize',11);
+legend('\Delta\psi (useful exergy)','X_{dest} (destroyed)','Location','northwest');
+title('Exergy Budget','FontSize',11); grid on;
+
+subplot(1,2,2); hold on;
+plot(data1.P2_bar, r1.X_dest,    'k-o', 'LineWidth',2,'MarkerFaceColor','k','MarkerSize',7);
+plot(data1.P2_bar, th1.X_dest_th,'k^--','LineWidth',1.8,'MarkerFaceColor','w','MarkerSize',7);
+xlabel('P_2 (bar)','FontSize',11); ylabel('X_{dest} (W)','FontSize',11);
+title('X_{dest} : Exp vs Theory','FontSize',11);
+legend('Experimental','Theoretical','Location','northwest'); grid on; box on;
+
+%% ── Figure 4: Case 2 — X_dest vs RPM ────────────────────────────────────────
+figure('Color','w','Position',[1120 560 900 400]);
+sgtitle('Case 2 — Exergy Destruction vs Shaft Speed', ...
+    'FontSize',13,'FontWeight','bold');
+
+subplot(1,2,1);
+bar(data2.RPM, [r2.delta_psi; r2.X_dest]','stacked');
+colororder({'#4472C4','#ED7D31'});
+xlabel('RPM','FontSize',11); ylabel('Power (W)','FontSize',11);
+legend('\Delta\psi','X_{dest}','Location','northwest');
+title('Exergy Budget','FontSize',11); grid on;
+
+subplot(1,2,2); hold on;
+plot(data2.RPM, r2.X_dest,    'k-o', 'LineWidth',2,'MarkerFaceColor','k','MarkerSize',7);
+plot(data2.RPM, th2.X_dest_th,'k^--','LineWidth',1.8,'MarkerFaceColor','w','MarkerSize',7);
+xlabel('RPM','FontSize',11); ylabel('X_{dest} (W)','FontSize',11);
+title('X_{dest} : Exp vs Theory','FontSize',11);
+legend('Experimental','Theoretical','Location','northwest'); grid on; box on;
+
+%% ═══════════════════════════════════════════════════════════════════════════
+%%  LOCAL FUNCTIONS
+%% ═══════════════════════════════════════════════════════════════════════════
+
+function r = analyseCase(d, R, cp, gamma, Cd, S1, S2, beta, T0)
+n = numel(d.delta_P1);
+fields = {'mdot','Q_vol','PR','P_in_bar','W_ise','W_iso','W_act', ...
+          'delta_psi','X_dest','S_gen','eta_ise','eta_iso','eta_energy','eta_exergy'};
+for f = fields; r.(f{1}) = zeros(1,n); end
+
+for k = 1:n
+    T1    = d.T1_C(k) + 273.15;
+    T2    = d.T2_C(k) + 273.15;
+    T3    = d.T3_C(k) + 273.15;
+    P_in  = d.P4_mbar(k) * 100;
+    P_out = d.P2_bar(k)  * 1e5 + P_in;
+    PR    = P_out / P_in;
+
+    rho   = P_in / (R * T3);
+    Qv    = Cd * S2 * sqrt(2 * d.delta_P1(k) / rho) / sqrt(1 - beta^4);
+    mdot  = rho * Qv;
+
+    W_ise = mdot * cp * T1 * (PR^((gamma-1)/gamma) - 1);
+    W_iso = mdot * R  * T1 * log(PR);
+    W_act = d.W_act(k);
+
+    delta_psi = mdot * ( cp*(T2 - T1) ...
+                - T0*(cp*log(T2/T1) - R*log(P_out/P_in)) );
+
+    X_dest = W_act - delta_psi;
+    S_gen  = X_dest / T0;
+
+    r.P_in_bar(k)   = P_in/1e5;
+    r.mdot(k)       = mdot;      r.Q_vol(k)   = Qv;
+    r.PR(k)         = PR;        r.W_ise(k)   = W_ise;
+    r.W_iso(k)      = W_iso;     r.W_act(k)   = W_act;
+    r.delta_psi(k)  = delta_psi; r.X_dest(k)  = X_dest;
+    r.S_gen(k)      = S_gen;
+    r.eta_ise(k)    = W_ise / W_act * 100;
+    r.eta_iso(k)    = W_iso / W_act * 100;
+    r.eta_energy(k) = W_ise / W_act * 100;
+    r.eta_exergy(k) = delta_psi  / W_act * 100;
+end
+end
+
+% ─────────────────────────────────────────────────────────────────────────────
+function th = theoreticalEfficiencies(r_exp, eta_ise_fit, cp, R, gamma, T0)
+n = numel(eta_ise_fit);
+th.eta_energy = zeros(1,n);
+th.eta_exergy = zeros(1,n);
+th.W_act_th   = zeros(1,n);
+th.X_dest_th  = zeros(1,n);
+
+for k = 1:n
+    PR   = r_exp.PR(k);
+    T1   = r_exp.W_ise(k) / (r_exp.mdot(k) * cp * (PR^((gamma-1)/gamma) - 1));
+    P_in = r_exp.P_in_bar(k) * 1e5;
+
+    W_act_th     = r_exp.W_ise(k) / eta_ise_fit(k);
+    T2_th        = T1 + W_act_th / (r_exp.mdot(k) * cp);
+    P_out        = PR * P_in;
+
+    delta_psi_th = r_exp.mdot(k) * ( cp*(T2_th - T1) ...
+                   - T0*(cp*log(T2_th/T1) - R*log(P_out/P_in)) );
+
+    th.W_act_th(k)   = W_act_th;
+    th.eta_energy(k) = eta_ise_fit(k) * 100;
+    th.eta_exergy(k) = delta_psi_th / W_act_th * 100;
+    th.X_dest_th(k)  = W_act_th - delta_psi_th;
+end
+end
+
+% ─────────────────────────────────────────────────────────────────────────────
+function printTable(title_str, x_vals, x_label, r, th)
+fprintf('\n══════════════════════════════════════════════════════════════\n');
+fprintf('  %s\n', title_str);
+fprintf('══════════════════════════════════════════════════════════════\n');
+fprintf('%-10s | %-8s %-8s %-10s %-10s | %-10s %-10s\n', ...
+    x_label,'η_en exp','η_ex exp','X_dest exp','ṁ (g/s)', ...
+    'η_en th','η_ex th');
+fprintf('%s\n', repmat('-',1,75));
+for k = 1:numel(x_vals)
+    fprintf('%-10.1f | %-8.2f %-8.2f %-10.2f %-10.4f | %-10.2f %-10.2f\n', ...
+        x_vals(k), r.eta_energy(k), r.eta_exergy(k), ...
+        r.X_dest(k), r.mdot(k)*1000, ...
+        th.eta_energy(k), th.eta_exergy(k));
+end
+end
