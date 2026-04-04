@@ -1,196 +1,193 @@
-%% Energy and Exergy Analysis: Professional Dashboard (Variable Properties)
-% Scenario: Constant Cold Flow, Varying Hot Flow (0 - 2000 l/h)
+%% Energy and Exergy Analysis: Professional Dashboard (Hot Flow Var)
+% Project: Shell-and-Tube Heat Exchanger Performance Analysis
+% Scenario: Varying Hot Flow (0 - 2000 l/h), Constant Cold Flow
 clear; clc; close all;
 
-%% --- 1. Geometric & Physical Constants ---
-T0  = 283.16; k_w = 0.6; 
-mu_const = 0.001; % Dynamic viscosity used for Reynolds
-Pr  = 6.966; k_s = 16; nt  = 6; di  = 0.016; 
-do  = 0.018; L   = 0.689; Ds  = 0.0731;
+%% --- 1. Physical & Geometric Constants ---
+% Reference environment and fluid properties
+T0  = 283.16;       % Reference temperature for Exergy [K]
+k_w = 0.6;          % Thermal conductivity of water [W/mK]
+mu_const = 0.0009;  % Dynamic viscosity [Pa.s]
+Pr  = 6.966;        % Prandtl Number
 
-%% --- 2. Input Experimental Data (Varying Hot Flow) ---
-P.flow_h = [498.15, 792.30, 1110.90, 1465.50];
-P.flow_c = [809.82, 793.26, 794.34, 800.64];
-P.Thi = [28.28, 28.48, 28.69, 29.19];    P.Tho = [25.57, 26.53, 27.18, 27.96];
-P.Tci = [6.72, 6.98, 7.52, 8.03];        P.Tco = [8.42, 8.84, 9.54, 10.20];
+% Exchanger Geometry (Shell-and-Tube)
+k_s = 15;           % Thermal conductivity of steel [W/mK]
+nt  = 6;            % Number of tubes
+di  = 0.016;        % Inner tube diameter [m]
+do  = 0.018;        % Outer tube diameter [m]
+L   = 0.689;        % Heat exchanger length [m]
+Ds  = 0.0731;       % Shell diameter [m]
 
-C.flow_h = [510.75, 814.65, 1110.90, 1449.60];
-C.flow_c = [808.56, 804.24, 807.12, 809.28];
-C.Thi = [29.75, 29.68, 28.08, 27.93];    C.Tho = [26.82, 27.35, 26.41, 26.57];
-C.Tci = [7.90, 7.76, 7.86, 7.99];        C.Tco = [9.70, 10.01, 10.15, 10.40];
+%% --- 2. Input Experimental Data ---
+% Counter Flow Experimental Matrix
+expDataP = [
+% Cols:   Flow_H, Flow_C, Thi,   Tho,   Tci,  Tco
+          498.15, 809.82, 28.28, 25.57, 6.72, 8.42;
+          792.30, 793.26, 28.48, 26.53, 6.98, 8.84;
+          1110.9, 794.34, 28.69, 27.18, 7.52, 9.54;
+          1465.5, 800.64, 29.19, 27.96, 8.03, 10.20
+        ];
 
-%% --- 3. Calculations ---
-% Added P.Q and C.Q outputs to avoid table errors later
+% Counter Flow Experimental Matrix
+expDataC = [
+% Cols: Flow_H, Flow_C, Thi,   Tho,   Tci,  Tco
+        510.75, 808.56, 29.75, 26.82, 7.90, 9.70;
+        814.65, 804.24, 29.68, 27.35, 7.76, 10.01;
+        1110.9, 807.12, 28.08, 26.41, 7.86, 10.15;
+        1449.6, 809.28, 27.93, 26.57, 7.99, 10.40
+];
+
+% Extract values into structures for readability
+P.flow_h = expDataP(:,1)'; P.flow_c = expDataP(:,2)';
+P.Thi = expDataP(:,3)';    P.Tho = expDataP(:,4)';
+P.Tci = expDataP(:,5)';    P.Tco = expDataP(:,6)';
+
+C.flow_h = expDataC(:,1)'; C.flow_c = expDataC(:,2)';
+C.Thi = expDataC(:,3)';    C.Tho = expDataC(:,4)';
+C.Tci = expDataC(:,5)';    C.Tco = expDataC(:,6)';
+
+%% --- 3. Calculations & Modeling ---
 [P.I, P.psi, P.epsEx, P.Q] = calcExergy(P.flow_h, P.flow_c, P.Thi, P.Tho, P.Tci, P.Tco, T0);
 [C.I, C.psi, C.epsEx, C.Q] = calcExergy(C.flow_h, C.flow_c, C.Thi, C.Tho, C.Tci, C.Tco, T0);
 
-fh_pred = linspace(10, 2000, 100); 
-[P_mod_I, P_mod_psi, P_mod_epsEx] = runValidatedModel(fh_pred, mean(P.flow_c), ...
-    mean(P.Thi), mean(P.Tci), 'parallel', T0, nt, di, do, L, Ds, k_w, k_s, mu_const, Pr);
-[C_mod_I, C_mod_psi, C_mod_epsEx] = runValidatedModel(fh_pred, mean(C.flow_c), ...
-    mean(C.Thi), mean(C.Tci), 'counter', T0, nt, di, do, L, Ds, k_w, k_s, mu_const, Pr);
+% Simulation Setup: Predictive model across flow range
+fh_pred = linspace(min([P.flow_h, C.flow_h])*0.1, 2000, 100); 
 
-% Ratio: Hot / Cold (Since Hot is the varying parameter)
-P_ratio_exp = P.flow_h ./ P.flow_c;
-C_ratio_exp = C.flow_h ./ C.flow_c;
-ratio_pred  = fh_pred ./ mean([P.flow_c, C.flow_c]);
+% Calculate Mass Flow Ratios (Predicted vs Experimental)
+rho_h_mod = getRho(mean([P.Thi, C.Thi])); 
+rho_c_mod = getRho(mean([P.Tci, C.Tci]));
+mc_const_mod = (mean([P.flow_c, C.flow_c])/3600) * (rho_c_mod/1000);
+mh_pred_vec = (fh_pred/3600) * (rho_h_mod/1000);
+ratio_pred = mh_pred_vec ./ mc_const_mod;
 
-%% --- 4. Plotting & Visuals ---
-colorP = [0.12, 0.27, 0.53]; % Midnight Blue
-colorC = [0.89, 0.35, 0.13]; % Sunset Orange
-bgGray = [0.99, 0.99, 0.99]; 
-stylePlot = @(ax) set(ax, 'LineWidth', 1.1, 'GridAlpha', 0.15, ...
-    'TickLabelInterpreter', 'latex', 'FontSize', 11, 'Box', 'on', 'Color', bgGray);
-expPlot = @(x, y, c, m) plot(x, y, 'Color', c, 'LineWidth', 1.5, ...
-    'Marker', m, 'MarkerSize', 8, 'MarkerEdgeColor', c, 'MarkerFaceColor', 'w');
+P_ratio_exp = (P.flow_h .* getRho(P.Thi)) ./ (P.flow_c .* getRho(P.Tci));
+C_ratio_exp = (C.flow_h .* getRho(C.Thi)) ./ (C.flow_c .* getRho(C.Tci));
 
-%% --- FIGURE 1: Exergy vs Hot Flow Rate ---
-figure('Name', 'Exergy Analysis: Hot Flow Rate Variation', 'Position', [50, 50, 800, 950], 'Color', 'w');
+% Execute Heat Exchanger Model (NTU-Effectiveness Method)
+[P_mod_I, P_mod_psi, P_mod_epsEx] = runValidatedModel_HotVar(fh_pred, mean(P.flow_c), mean(P.Thi), mean(P.Tci), 'parallel', T0, nt, di, do, L, Ds, k_w, k_s, mu_const, Pr);
+[C_mod_I, C_mod_psi, C_mod_epsEx] = runValidatedModel_HotVar(fh_pred, mean(C.flow_c), mean(C.Thi), mean(C.Tci), 'counter', T0, nt, di, do, L, Ds, k_w, k_s, mu_const, Pr);
+
+%% --- 4. Plotting Configuration ---
+colorP = [0.12, 0.27, 0.53]; colorC = [0.89, 0.35, 0.13]; opacity = 0.65; 
+plotExp = @(ax, x, y, c, m) plot(ax, x, y, '-','Color', c, 'LineWidth', 1.5, 'Marker', m, ...
+    'MarkerSize', 8, 'MarkerEdgeColor', c, 'MarkerFaceColor', 'w');
+stylePlot = @(ax, yticks, ylims) set(ax, 'LineWidth', 1.1, 'GridAlpha', 0.2, 'TickLabelInterpreter', 'latex', ...
+    'FontSize', 11, 'Box', 'on', 'YTick', yticks, 'YLim', ylims, 'XGrid', 'on', 'YGrid', 'on');
+
+%% --- FIGURE 1: Performance vs. Volumetric Hot Flow ---
+figure('Name', 'Exergy Analysis: Hot Flow Rate', 'Position', [50, 50, 800, 950], 'Color', 'w');
 t1 = tiledlayout(3, 1, 'TileSpacing', 'compact', 'Padding', 'loose');
+title(t1, '\textbf{Exergy Performance vs. Hot Flow Rate (Hot Flow Var)}', 'Interpreter', 'latex', 'FontSize', 16);
 
-ax1_1 = nexttile; hold on; grid on;
-p1 = plot(fh_pred, P_mod_I, '--', 'Color', [colorP, 0.65], 'LineWidth', 1.2); 
-p2 = plot(fh_pred, C_mod_I, '--', 'Color', [colorC, 0.65], 'LineWidth', 1.2);
-e1 = expPlot(P.flow_h, P.I, colorP, 'o');
-e2 = expPlot(C.flow_h, C.I, colorC, 's');
-ylabel('$\mathbf{\dot{I}}$ \textbf{[W]}', 'Interpreter', 'latex', 'FontSize', 13);
-title('\textbf{Exergy Performance vs. Hot Flow Rate}', 'Interpreter', 'latex', 'FontSize', 15);
-stylePlot(ax1_1); xticklabels(ax1_1, {}); 
-lgd1 = legend([p1, p2, e1, e2], {'Parallel (Model)', 'Counter (Model)', 'Parallel (Exp)', 'Counter (Exp)'}, ...
-    'Orientation', 'horizontal', 'Interpreter', 'latex', 'FontSize', 10);
-lgd1.Layout.Tile = 'north'; 
+ax1 = nexttile; hold on;
+p_mod1 = plot(fh_pred, P_mod_I, '--', 'Color', [colorP opacity], 'LineWidth', 2);
+c_mod1 = plot(fh_pred, C_mod_I, '--', 'Color', [colorC opacity], 'LineWidth', 2);
+p_exp1 = plotExp(ax1, P.flow_h, P.I, colorP, 'o'); 
+c_exp1 = plotExp(ax1, C.flow_h, C.I, colorC, 's');
+ylabel('$\dot{I}$ [W]', 'Interpreter', 'latex'); stylePlot(ax1, 0:100:500, [0 500]);
+legend([p_mod1, c_mod1, p_exp1, c_exp1], {'Parallel (Mod)', 'Counter (Mod)', 'Parallel (Exp)', 'Counter (Exp)'}, ...
+    'Location', 'northoutside', 'Orientation', 'horizontal', 'Interpreter', 'latex');
 
-ax1_2 = nexttile; hold on; grid on;
-plot(fh_pred, P_mod_psi, '--', 'Color', [colorP, 0.65], 'LineWidth', 1.2);
-plot(fh_pred, C_mod_psi, '--', 'Color', [colorC, 0.65], 'LineWidth', 1.2);
-expPlot(P.flow_h, P.psi, colorP, 'o');
-expPlot(C.flow_h, C.psi, colorC, 's');
-ylabel('$\mathbf{\psi}$ \textbf{[\%]}', 'Interpreter', 'latex', 'FontSize', 13);
-stylePlot(ax1_2); xticklabels(ax1_2, {}); 
+ax2 = nexttile; hold on;
+plot(fh_pred, P_mod_psi, '--', 'Color', [colorP opacity], 'LineWidth', 2);
+plot(fh_pred, C_mod_psi, '--', 'Color', [colorC opacity], 'LineWidth', 2);
+plotExp(ax2, P.flow_h, P.psi, colorP, 'o'); plotExp(ax2, C.flow_h, C.psi, colorC, 's');
+ylabel('$\psi$ [\%]', 'Interpreter', 'latex'); stylePlot(ax2, 0:10:50, [0 50]);
 
-ax1_3 = nexttile; hold on; grid on;
-plot(fh_pred, P_mod_epsEx, '--', 'Color', [colorP, 0.65], 'LineWidth', 1.2);
-plot(fh_pred, C_mod_epsEx, '--', 'Color', [colorC, 0.65], 'LineWidth', 1.2);
-expPlot(P.flow_h, P.epsEx, colorP, 'o');
-expPlot(C.flow_h, C.epsEx, colorC, 's');
-ylabel('$\mathbf{\epsilon_{ex}}$ \textbf{[\%]}', 'Interpreter', 'latex', 'FontSize', 13);
-xlabel('\textbf{Hot Fluid Flow Rate, } $\mathbf{\dot{V}_h}$ \textbf{[l/h]}', 'Interpreter', 'latex', 'FontSize', 12);
-stylePlot(ax1_3);
-linkaxes([ax1_1, ax1_2, ax1_3], 'x'); xlim(ax1_1, [0 2000]);
+ax3 = nexttile; hold on;
+plot(fh_pred, P_mod_epsEx, '--', 'Color', [colorP opacity], 'LineWidth', 2);
+plot(fh_pred, C_mod_epsEx, '--', 'Color', [colorC opacity], 'LineWidth', 2);
+plotExp(ax3, P.flow_h, P.epsEx, colorP, 'o'); plotExp(ax3, C.flow_h, C.epsEx, colorC, 's');
+ylabel('$\epsilon_{ex}$ [\%]', 'Interpreter', 'latex'); xlabel('Hot Fluid Flow Rate [l/h]', 'Interpreter', 'latex');
+stylePlot(ax3, 0:10:50, [0 50]);
+linkaxes([ax1, ax2, ax3], 'x'); xlim(ax1, [0 2000]);
 
-%% --- FIGURE 2: Exergy vs Flow Ratio (mh/mc) ---
-figure('Name', 'Exergy Analysis: Qhot Var (Flow Ratio)', 'Position', [860, 50, 800, 950], 'Color', 'w');
+%% --- FIGURE 2: Performance vs. Mass Flow Ratio ---
+figure('Name', 'Exergy Analysis: Mass Ratio (Hot Var)', 'Position', [860, 50, 800, 950], 'Color', 'w');
 t2 = tiledlayout(3, 1, 'TileSpacing', 'compact', 'Padding', 'loose');
+title(t2, '\textbf{Exergy Performance vs. Mass Flow Ratio (Hot Flow Var)}', 'Interpreter', 'latex', 'FontSize', 16);
 
-ax2_1 = nexttile; hold on; grid on;
-p3 = plot(ratio_pred, P_mod_I, '--', 'Color', [colorP, 0.65], 'LineWidth', 1.2);
-p4 = plot(ratio_pred, C_mod_I, '--', 'Color', [colorC, 0.65], 'LineWidth', 1.2);
-[~, sP] = sort(P_ratio_exp); [~, sC] = sort(C_ratio_exp);
-e3 = expPlot(P_ratio_exp(sP), P.I(sP), colorP, 'o');
-e4 = expPlot(C_ratio_exp(sC), C.I(sC), colorC, 's');
-ylabel('$\mathbf{\dot{I}}$ \textbf{[W]}', 'Interpreter', 'latex', 'FontSize', 13);
-title('\textbf{Exergy Performance vs. Mass Flow Ratio ($\dot{m}_h/\dot{m}_c$)}', 'Interpreter', 'latex', 'FontSize', 15);
-stylePlot(ax2_1); xticklabels(ax2_1, {}); 
-lgd2 = legend([p3, p4, e3, e4], {'Parallel (Model)', 'Counter (Model)', 'Parallel (Exp)', 'Counter (Exp)'}, ...
-    'Orientation', 'horizontal', 'Interpreter', 'latex', 'FontSize', 10);
-lgd2.Layout.Tile = 'north'; 
+ax4 = nexttile; hold on;
+p_mod2 = plot(ratio_pred, P_mod_I, '--', 'Color', [colorP opacity], 'LineWidth', 2);
+c_mod2 = plot(ratio_pred, C_mod_I, '--', 'Color', [colorC opacity], 'LineWidth', 2);
+p_exp2 = plotExp(ax4, P_ratio_exp, P.I, colorP, 'o'); 
+c_exp2 = plotExp(ax4, C_ratio_exp, C.I, colorC, 's');
+ylabel('$\dot{I}$ [W]', 'Interpreter', 'latex'); stylePlot(ax4, 0:100:500, [0 500]);
+legend([p_mod2, c_mod2, p_exp2, c_exp2], {'Parallel (Mod)', 'Counter (Mod)', 'Parallel (Exp)', 'Counter (Exp)'}, ...
+    'Location', 'northoutside', 'Orientation', 'horizontal', 'Interpreter', 'latex');
 
-ax2_2 = nexttile; hold on; grid on;
-plot(ratio_pred, P_mod_psi, '--', 'Color', [colorP, 0.65], 'LineWidth', 1.2);
-plot(ratio_pred, C_mod_psi, '--', 'Color', [colorC, 0.65], 'LineWidth', 1.2);
-expPlot(P_ratio_exp(sP), P.psi(sP), colorP, 'o');
-expPlot(C_ratio_exp(sC), C.psi(sC), colorC, 's');
-ylabel('$\mathbf{\psi}$ \textbf{[\%]}', 'Interpreter', 'latex', 'FontSize', 13);
-stylePlot(ax2_2); xticklabels(ax2_2, {}); 
+ax5 = nexttile; hold on;
+plot(ratio_pred, P_mod_psi, '--', 'Color', [colorP opacity], 'LineWidth', 2);
+plot(ratio_pred, C_mod_psi, '--', 'Color', [colorC opacity], 'LineWidth', 2);
+plotExp(ax5, P_ratio_exp, P.psi, colorP, 'o'); plotExp(ax5, C_ratio_exp, C.psi, colorC, 's');
+ylabel('$\psi$ [\%]', 'Interpreter', 'latex'); stylePlot(ax5, 0:10:50, [0 50]);
 
-ax2_3 = nexttile; hold on; grid on;
-plot(ratio_pred, P_mod_epsEx, '--', 'Color', [colorP, 0.65], 'LineWidth', 1.2);
-plot(ratio_pred, C_mod_epsEx, '--', 'Color', [colorC, 0.65], 'LineWidth', 1.2);
-expPlot(P_ratio_exp(sP), P.epsEx(sP), colorP, 'o');
-expPlot(C_ratio_exp(sC), C.epsEx(sC), colorC, 's');
-ylabel('$\mathbf{\epsilon_{ex}}$ \textbf{[\%]}', 'Interpreter', 'latex', 'FontSize', 13);
-xlabel('\textbf{Mass Flow Rate Ratio, } $\mathbf{\dot{m}_h / \dot{m}_c}$', 'Interpreter', 'latex', 'FontSize', 12);
-stylePlot(ax2_3);
-linkaxes([ax2_1, ax2_2, ax2_3], 'x'); xlim(ax2_1, [0 2.5]);
-
-%% --- Display Combined Results Table ---
-fprintf('\n==========================================================\n');
-fprintf('       EXPERIMENTAL RESULTS: ENERGY & EXERGY SUMMARY\n');
-fprintf('==========================================================\n');
-VarNames = {'HotFlow_lh', 'ColdFlow_lh', 'Heat_Q_W', 'ExDest_I_W', 'Efficiency_pct'};
-T_P = table(P.flow_h', P.flow_c', P.Q', P.I', P.psi', 'VariableNames', VarNames);
-fprintf('\n[Parallel Flow Configuration]:\n');
-disp(T_P);
-T_C = table(C.flow_h', C.flow_c', C.Q', C.I', C.psi', 'VariableNames', VarNames);
-fprintf('\n[Counter Flow Configuration]:\n');
-disp(T_C);
+ax6 = nexttile; hold on;
+plot(ratio_pred, P_mod_epsEx, '--', 'Color', [colorP opacity], 'LineWidth', 2);
+plot(ratio_pred, C_mod_epsEx, '--', 'Color', [colorC opacity], 'LineWidth', 2);
+plotExp(ax6, P_ratio_exp, P.epsEx, colorP, 'o'); plotExp(ax6, C_ratio_exp, C.epsEx, colorC, 's');
+ylabel('$\epsilon_{ex}$ [\%]', 'Interpreter', 'latex'); xlabel('Mass Flow Ratio $\dot{m}_h / \dot{m}_c$', 'Interpreter', 'latex');
+stylePlot(ax6, 0:10:50, [0 50]);
+linkaxes([ax4, ax5, ax6], 'x'); xlim(ax4, [0 2.5]);
 
 %% --- HELPER FUNCTIONS ---
-% Density and Cp Calculations at each point
-function rho = getRho(T_avg)
-    rho = -0.0000001*(T_avg).^4 + 0.00004*(T_avg).^3 - 0.0074*(T_avg).^2 + 0.0477*(T_avg) + 999.91;
+function rho = getRho(T)
+    % Density correlation for water [kg/m^3]
+    rho = -0.0000001*T.^4 + 0.00004*T.^3 - 0.0074*T.^2 + 0.0477*T + 999.91;
+end
+function cp = getCp(T)
+    % Specific heat correlation for water [J/kgK]
+    cp = (0.000000003*T.^4 - 0.0000007*T.^3 + 0.00007*T.^2 - 0.0028*T + 4.2173)*1000;
 end
 
-function cp = getCp(T_avg)
-    cp = (0.000000003*(T_avg).^4 - 0.0000007*(T_avg).^3 + 0.00007*(T_avg).^2 - 0.0028*(T_avg) + 4.2173)*1000;
-end
-
-% Numerical simulation of NTU method mathmatical model 
 function [I, psi, epsilon_ex, Q] = calcExergy(fh, fc, Thi, Tho, Tci, Tco, T0)
-    Tavg_h = (Thi + Tho) / 2;
-    Tavg_c = (Tci + Tco) / 2;
-    rho_h = getRho(Tavg_h); cp_h = getCp(Tavg_h);
-    rho_c = getRho(Tavg_c); cp_c = getCp(Tavg_c);
-    
-    mh = (fh / 3600) .* (rho_h / 1000); mc = (fc / 3600) .* (rho_c / 1000);
+    % Thermodynamic Exergy Balance
+    rho_h = getRho((Thi+Tho)/2); cp_h = getCp((Thi+Tho)/2);
+    rho_c = getRho((Tci+Tco)/2); cp_c = getCp((Tci+Tco)/2);
+    mh = (fh/3600).*(rho_h/1000); mc = (fc/3600).*(rho_c/1000);
     ThiK = Thi+273.15; ThoK = Tho+273.15; TciK = Tci+273.15; TcoK = Tco+273.15;
     
-    % Heat transfer calculation
-    Q = mh .* cp_h .* (ThiK - ThoK); 
+    Q = mh.*cp_h.*(ThiK - ThoK); % Heat transfer [W]
+    dExH = mh.*cp_h.*((ThiK - ThoK) - T0.*log(ThiK./ThoK)); % Exergy supplied
+    dExC = mc.*cp_c.*((TcoK - TciK) - T0.*log(TcoK./TciK)); % Exergy recovered
     
-    dExH = mh .* cp_h .* ((ThiK - ThoK) - T0 .* log(ThiK./ThoK)); 
-    dExC = mc .* cp_c .* ((TcoK - TciK) - T0 .* log(TcoK./TciK)); 
-    dEx_max = min(mh, mc) .* cp_h .* ((ThiK - TciK) - T0 .* log(ThiK./TciK));
+    I = dExH - dExC;                % Exergy Destruction [W]
+    psi = abs((dExC ./ dExH)) * 100; % Rational Exergetic Efficiency [%]
     
-    I = dExH - dExC; 
-    psi = abs((dExC ./ dExH)) * 100;
-    epsilon_ex = (dExH ./ dEx_max) * 100;
-    psi(isnan(psi)) = 0; epsilon_ex(isnan(epsilon_ex)) = 0;
+    Ch = mh.*cp_h; Cc = mc.*cp_c; Cmin = min(Ch, Cc);
+    epsilon_ex = (Ch.*(ThiK - ThoK)) ./ (Cmin.*(ThiK - TciK)) * 100; % Thermal Effectiveness [%]
+    
+    % Data Cleaning
+    I(isnan(I)) = 0; psi(isnan(psi)) = 0; epsilon_ex(isnan(epsilon_ex)) = 0;
 end
 
-function [I, psi, epsilon_ex] = runValidatedModel(fh_list, fc, Thi, Tci, mode, T0, nt, di, do, L, Ds, k_w, k_s, mu, Pr)
+function [I, psi, epsilon_ex] = runValidatedModel_HotVar(fh_list, fc, Thi, Tci, mode, T0, nt, di, do, L, Ds, k_w, k_s, mu, Pr)
+    % Predictive Model using Convection Correlations and NTU method
     I = zeros(size(fh_list)); psi = zeros(size(fh_list)); epsilon_ex = zeros(size(fh_list));
-    ThiK = Thi + 273.15; TciK = Tci + 273.15;
+    Area_shell = (pi/4)*(Ds^2 - nt*do^2); Perimeter_shell = pi*Ds + nt*pi*do; Dh = 4*Area_shell/Perimeter_shell;
+    Ai = nt*pi*di*L; Ao = nt*pi*do*L; R_wall = log(do/di)/(2*pi*k_s*L*nt);
     
     for i = 1:length(fh_list)
-        rho_h = getRho(Thi); cp_h = getCp(Thi);
-        rho_c = getRho(Tci); cp_c = getCp(Tci);
+        rho_h = getRho(Thi); cp_h = getCp(Thi); rho_c = getRho(Tci); cp_c = getCp(Tci);
+        mh = (fh_list(i)/3600)*(rho_h/1000); mc = (fc/3600)*(rho_c/1000);
         
-        mh = (fh_list(i)/3600)*(rho_h/1000);
-        mc = (fc/3600)*(rho_c/1000);
+        % Nusselt & Reynolds Correlations (Physics Engine)
+        hi = (0.023*((rho_c*(mc/(rho_c*nt*pi/4*di^2))*di)/mu)^0.8 * Pr^0.4 * (1+6*di/L) * k_w)/di;
+        ho = (0.36*((rho_h*(mh/(rho_h*Area_shell))*Dh)/mu)^0.55 * Pr^(1/3) * k_w)/Dh;
+        UA = 1/(1/(hi*Ai) + R_wall + 1/(ho*Ao));
         
-        Dh = (Ds^2 - nt*do^2) / (Ds + nt*do);
-        u_s = mh / (rho_h * (pi/4 * (Ds^2 - nt*do^2))); Re_s = (u_s * Dh * rho_h) / mu;
-        Nu_s = 0.36 * Re_s^0.55 * Pr^(1/3); ho = (Nu_s * k_w) / Dh;
-        
-        u_t = mc / (rho_c * nt * (pi/4 * di^2)); Re_t = (u_t * di * rho_c) / mu; 
-        Nu_t = 0.023 * Re_t^0.8 * Pr^0.4 * (1 + 6*di/L); hi = (Nu_t * k_w) / di;
-        
-        R_wall = log(do/di) / (2 * pi * k_s * L * nt);
-        US = 1 / (1/(ho * nt*pi*do*L) + R_wall + 1/(hi * nt*pi*di*L));
-        
-        Cc = mc*cp_c; Ch = mh*cp_h; Cmin = min(Cc,Ch); Cr = Cmin/max(Cc,Ch);
-        NTU = US / Cmin;
-        
-        if strcmp(mode, 'parallel')
-            eps_hx = (1 - exp(-NTU*(1+Cr))) / (1+Cr);
+        % NTU-Effectiveness Branching Logic
+        Cc = mc*cp_c; Ch = mh*cp_h; Cmin = min(Cc,Ch); Cr = Cmin/max(Cc,Ch); NTU = UA/Cmin;
+        if strcmp(mode,'parallel')
+            eps = (1-exp(-NTU*(1+Cr)))/(1+Cr);
         else
-            eps_hx = (1 - exp(-NTU*(1-Cr))) / (1 - Cr*exp(-NTU*(1-Cr)));
+            if Cr==1, eps = NTU/(1+NTU); 
+            else, eps = (1-exp(-NTU*(1-Cr)))/(1-Cr*exp(-NTU*(1-Cr))); end
         end
         
-        Q = eps_hx * Cmin * (ThiK - TciK);
-        ThoK = ThiK - Q/Ch; TcoK = TciK + Q/Cc;
-        
-        [I(i), psi(i), epsilon_ex(i)] = calcExergy(fh_list(i), fc, Thi, ThoK-273.15, Tci, TcoK-273.15, T0);
+        % Predict Outlets and calculate 2nd Law Metrics
+        Q = eps*Cmin*((Thi+273.15)-(Tci+273.15));
+        ThoK = (Thi+273.15)-Q/Ch; TcoK = (Tci+273.15)+Q/Cc;
+        [I(i), psi(i), epsilon_ex(i), ~] = calcExergy(fh_list(i), fc, Thi, ThoK-273.15, Tci, TcoK-273.15, T0);
     end
 end
