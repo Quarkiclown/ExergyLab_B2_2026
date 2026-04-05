@@ -1,6 +1,8 @@
 %% Energy and Exergy Analysis: Professional Dashboard (Hot Flow Var)
 % Project: Shell-and-Tube Heat Exchanger Performance Analysis
-% Scenario: Varying Hot Flow (0 - 2000 l/h), Constant Cold Flow
+
+% Author: Al Hadheri, Nistar, Olive
+% Date:   April 2026
 clear; clc; close all;
 
 %% --- 1. Physical & Geometric Constants ---
